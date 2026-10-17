@@ -1,0 +1,54 @@
+// Project tasks — run via Command Palette (ctrl-shift-p) → "task: spawn", or alt-shift-t
+[
+  {
+    "label": "Run app (local Postgres via docker compose)",
+    "command": ".\\mvnw.cmd",
+    "args": ["spring-boot:run"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "reveal": "always"
+  },
+  {
+    "label": "Run app (Testcontainers Postgres)",
+    "command": ".\\mvnw.cmd",
+    "args": ["spring-boot:test-run"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "reveal": "always"
+  },
+  {
+    "label": "Start Postgres (docker compose up)",
+    "command": "docker",
+    "args": ["compose", "up", "-d"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Build (compile + test-compile)",
+    "command": ".\\mvnw.cmd",
+    "args": ["-B", "test-compile"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Test: all",
+    "command": ".\\mvnw.cmd",
+    "args": ["-B", "test"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Test: current class",
+    "command": ".\\mvnw.cmd",
+    "args": ["-B", "test", "-Dtest=$ZED_STEM"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Package jar",
+    "command": ".\\mvnw.cmd",
+    "args": ["-B", "-DskipTests", "package"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  }
+]
