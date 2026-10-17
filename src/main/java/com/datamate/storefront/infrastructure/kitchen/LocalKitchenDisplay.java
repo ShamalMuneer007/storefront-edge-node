@@ -1,31 +1,30 @@
 package com.datamate.storefront.infrastructure.kitchen;
 
 import com.datamate.storefront.application.port.IdGenerator;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 public class LocalKitchenDisplay implements KitchenDisplay {
 
-    private final JdbcClient jdbc;
+    private final JdbcTemplate jdbc;
     private final IdGenerator ids;
 
-    public LocalKitchenDisplay(JdbcClient jdbc, IdGenerator ids) {
+    public LocalKitchenDisplay(JdbcTemplate jdbc, IdGenerator ids) {
         this.jdbc = jdbc;
         this.ids = ids;
     }
 
     @Override
-    public void dispatch(KitchenTicket ticket) {
-        jdbc.sql("""
+    public void dispatch(List<KitchenTicket> tickets) {
+        jdbc.batchUpdate("""
                         INSERT INTO kitchen_ticket (id, order_id, event_id, payload)
-                        VALUES (:id, :orderId, :eventId, CAST(:payload AS jsonb))
+                        VALUES (?, ?, ?, CAST(? AS jsonb))
                         ON CONFLICT (order_id) DO NOTHING
-                        """)
-                .param("id", ids.next())
-                .param("orderId", ticket.orderId())
-                .param("eventId", ticket.eventId())
-                .param("payload", ticket.payloadJson())
-                .update();
+                        """,
+                tickets.stream()
+                        .map(ticket -> new Object[] {ids.next(), ticket.orderId(), ticket.eventId(), ticket.payloadJson()})
+                        .toList());
     }
 }

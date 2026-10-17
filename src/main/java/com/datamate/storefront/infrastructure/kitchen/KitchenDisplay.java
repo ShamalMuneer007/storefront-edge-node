@@ -1,7 +1,12 @@
 package com.datamate.storefront.infrastructure.kitchen;
 
-/** Delivery target for kitchen tickets. Must tolerate the same ticket being delivered more than once. */
+import java.util.List;
+
+/**
+ * Delivery target for kitchen tickets. A failed call may have applied part of the batch and will
+ * be redelivered, so implementations must be idempotent per ticket.
+ */
 public interface KitchenDisplay {
 
-    void dispatch(KitchenTicket ticket);
+    void dispatch(List<KitchenTicket> tickets);
 }

@@ -11,9 +11,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
  * Delivers pending outbox events at least once without holding a transaction during dispatch:
- * a single-statement claim leases events by pushing {@code next_attempt_at} forward, dispatch
- * runs with no transaction open, and each outcome is settled with one more statement. Events
- * whose lease expires (crash mid-dispatch) are claimed again.
+ * a single-statement claim leases a batch by pushing {@code next_attempt_at} forward, the batch
+ * is dispatched with no transaction open, and the outcome is settled with one more statement.
+ * If the batch fails, events are retried one by one so a single bad event cannot block the rest.
+ * Events whose lease expires (crash mid-dispatch) are claimed again.
  */
 public class OutboxRelay {
 
@@ -32,15 +33,33 @@ public class OutboxRelay {
         this.lease = lease;
     }
 
-    /** Returns the number of events delivered successfully. */
+    /**
+     * Relays batches back to back while they come back full and fully delivered, so a rush is
+     * drained at full speed. Stops on a partial batch or any failure, leaving the pause to the caller.
+     */
+    public int drain() {
+        int total = 0;
+        int delivered;
+        do {
+            delivered = relayPending();
+            total += delivered;
+        } while (delivered == batchSize);
+        return total;
+    }
+
+    /** Relays one batch; returns the number of events delivered successfully. */
     public int relayPending() {
-        int delivered = 0;
-        for (ClaimedEvent event : claim()) {
-            if (deliver(event)) {
-                delivered++;
-            }
+        List<ClaimedEvent> claimed = claim();
+        if (claimed.isEmpty()) {
+            return 0;
         }
-        return delivered;
+        try {
+            kitchen.dispatch(claimed.stream().map(ClaimedEvent::ticket).toList());
+        } catch (RuntimeException batchFailure) {
+            return deliverOneByOne(claimed);
+        }
+        markPublished(claimed.stream().map(ClaimedEvent::id).toList());
+        return claimed.size();
     }
 
     private List<ClaimedEvent> claim() {
@@ -69,24 +88,40 @@ public class OutboxRelay {
                 .toList();
     }
 
-    private boolean deliver(ClaimedEvent event) {
-        try {
-            kitchen.dispatch(new KitchenTicket(event.id(), event.aggregateId(), event.payload()));
-        } catch (RuntimeException e) {
-            long backoff = Math.min(MAX_BACKOFF_SECONDS, 1L << Math.min(event.attempts(), 6));
-            log.warn("Kitchen dispatch failed for event {} (attempt {}), retrying in {}s",
-                    event.id(), event.attempts(), backoff, e);
-            jdbc.sql("UPDATE outbox_event SET next_attempt_at = now() + :seconds * INTERVAL '1 second' WHERE id = :id")
-                    .param("seconds", backoff)
-                    .param("id", event.id())
-                    .update();
-            return false;
+    private int deliverOneByOne(List<ClaimedEvent> claimed) {
+        int delivered = 0;
+        for (ClaimedEvent event : claimed) {
+            try {
+                kitchen.dispatch(List.of(event.ticket()));
+                markPublished(List.of(event.id()));
+                delivered++;
+            } catch (RuntimeException e) {
+                scheduleRetry(event, e);
+            }
         }
-        jdbc.sql("UPDATE outbox_event SET published_at = now() WHERE id = :id")
-                .param("id", event.id())
-                .update();
-        return true;
+        return delivered;
     }
 
-    private record ClaimedEvent(UUID id, UUID aggregateId, String payload, int attempts, OffsetDateTime createdAt) {}
+    private void markPublished(List<UUID> ids) {
+        jdbc.sql("UPDATE outbox_event SET published_at = now() WHERE id IN (:ids)")
+                .param("ids", ids)
+                .update();
+    }
+
+    private void scheduleRetry(ClaimedEvent event, RuntimeException cause) {
+        long backoff = Math.min(MAX_BACKOFF_SECONDS, 1L << Math.min(event.attempts(), 6));
+        log.warn("Kitchen dispatch failed for event {} (attempt {}), retrying in {}s",
+                event.id(), event.attempts(), backoff, cause);
+        jdbc.sql("UPDATE outbox_event SET next_attempt_at = now() + :seconds * INTERVAL '1 second' WHERE id = :id")
+                .param("seconds", backoff)
+                .param("id", event.id())
+                .update();
+    }
+
+    private record ClaimedEvent(UUID id, UUID aggregateId, String payload, int attempts, OffsetDateTime createdAt) {
+
+        KitchenTicket ticket() {
+            return new KitchenTicket(id, aggregateId, payload);
+        }
+    }
 }

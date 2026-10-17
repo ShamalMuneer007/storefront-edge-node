@@ -7,6 +7,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 class KitchenDispatchTest extends IntegrationTest {
 
-    private static final KitchenDisplay OFFLINE = ticket -> {
+    private static final KitchenDisplay OFFLINE = tickets -> {
         throw new IllegalStateException("KDS offline");
     };
 
@@ -73,14 +74,32 @@ class KitchenDispatchTest extends IntegrationTest {
     void redeliveryCreatesASingleTicket() {
         placeBurger();
         List<KitchenTicket> delivered = new ArrayList<>();
-        relayTo(ticket -> {
-            kitchen.dispatch(ticket);
-            delivered.add(ticket);
+        relayTo(tickets -> {
+            kitchen.dispatch(tickets);
+            delivered.addAll(tickets);
         }).relayPending();
 
-        kitchen.dispatch(delivered.getFirst());
+        kitchen.dispatch(delivered);
 
         assertThat(count("kitchen_ticket")).isOne();
+    }
+
+    @Test
+    void oneFailingTicketDoesNotBlockTheRestOfItsBatch() {
+        UUID poisoned = UUID.fromString(body(placeOrder("T1", "K1", "BURGER", 1)).get("id").asString());
+        placeOrder("T1", "K2", "BURGER", 1);
+        placeOrder("T1", "K3", "BURGER", 1);
+
+        int delivered = relayTo(tickets -> {
+            if (tickets.stream().anyMatch(ticket -> ticket.orderId().equals(poisoned))) {
+                throw new IllegalStateException("KDS rejects " + poisoned);
+            }
+            kitchen.dispatch(tickets);
+        }).relayPending();
+
+        assertThat(delivered).isEqualTo(2);
+        assertThat(count("kitchen_ticket")).isEqualTo(2);
+        assertThat(pendingEvents()).isOne();
     }
 
     @Test
@@ -88,7 +107,7 @@ class KitchenDispatchTest extends IntegrationTest {
         placeBurger();
         AtomicReference<Boolean> inTransaction = new AtomicReference<>();
 
-        relayTo(ticket -> inTransaction.set(TransactionSynchronizationManager.isActualTransactionActive()))
+        relayTo(tickets -> inTransaction.set(TransactionSynchronizationManager.isActualTransactionActive()))
                 .relayPending();
 
         assertThat(inTransaction).hasValue(false);
@@ -103,6 +122,30 @@ class KitchenDispatchTest extends IntegrationTest {
         List<String> skus = jdbc.sql("SELECT jsonb_array_elements(payload -> 'items') ->> 'sku' FROM kitchen_ticket")
                 .query(String.class).list();
         assertThat(skus).containsExactly("BURGER");
+    }
+
+    @Test
+    void drainDeliversABacklogLargerThanOneBatch() {
+        for (int i = 0; i < 5; i++) {
+            placeOrder("T1", "K" + i, "BURGER", 1);
+        }
+
+        assertThat(new OutboxRelay(jdbc, kitchen, 2, Duration.ofSeconds(30)).drain()).isEqualTo(5);
+
+        assertThat(pendingEvents()).isZero();
+        assertThat(count("kitchen_ticket")).isEqualTo(5);
+    }
+
+    @Test
+    void drainStopsAfterAFailedBatchInsteadOfSpinning() {
+        for (int i = 0; i < 5; i++) {
+            placeOrder("T1", "K" + i, "BURGER", 1);
+        }
+
+        assertThat(new OutboxRelay(jdbc, OFFLINE, 2, Duration.ofSeconds(30)).drain()).isZero();
+
+        assertThat(jdbc.sql("SELECT count(*) FROM outbox_event WHERE attempts > 0").query(Long.class).single())
+                .isEqualTo(2);
     }
 
     @Test

@@ -16,6 +16,6 @@ class OutboxScheduler {
 
     @Scheduled(fixedDelayString = "${storefront.outbox.poll-interval-ms}")
     void relay() {
-        relay.relayPending();
+        relay.drain();
     }
 }
