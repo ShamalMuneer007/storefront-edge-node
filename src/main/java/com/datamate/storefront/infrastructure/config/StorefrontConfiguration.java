@@ -1,23 +1,26 @@
 package com.datamate.storefront.infrastructure.config;
 
-import com.datamate.storefront.application.BranchSettings;
-import com.datamate.storefront.application.PlaceOrderService;
-import com.datamate.storefront.application.port.FiscalSequence;
-import com.datamate.storefront.application.port.IdGenerator;
-import com.datamate.storefront.application.port.IdempotencyKeys;
-import com.datamate.storefront.application.port.Inventory;
-import com.datamate.storefront.application.port.KitchenOutbox;
-import com.datamate.storefront.application.port.Orders;
-import com.datamate.storefront.application.port.Transactions;
-import com.datamate.storefront.infrastructure.UuidV7Generator;
-import com.datamate.storefront.infrastructure.kitchen.KitchenDisplay;
-import com.datamate.storefront.infrastructure.kitchen.OutboxRelay;
-import com.datamate.storefront.infrastructure.persistence.SpringTransactions;
+import com.datamate.storefront.application.port.inbound.FindOrderUseCase;
+import com.datamate.storefront.application.port.inbound.PlaceOrderUseCase;
+import com.datamate.storefront.application.port.outbound.FiscalSequence;
+import com.datamate.storefront.application.port.outbound.IdGenerator;
+import com.datamate.storefront.application.port.outbound.IdempotencyKeys;
+import com.datamate.storefront.application.port.outbound.Inventory;
+import com.datamate.storefront.application.port.outbound.KitchenOutbox;
+import com.datamate.storefront.application.port.outbound.Orders;
+import com.datamate.storefront.application.port.outbound.Transactions;
+import com.datamate.storefront.application.service.BranchSettings;
+import com.datamate.storefront.application.service.FindOrderService;
+import com.datamate.storefront.application.service.PlaceOrderService;
+import com.datamate.storefront.infrastructure.adapter.outbound.id.UuidV7Generator;
+import com.datamate.storefront.infrastructure.adapter.outbound.kitchen.KitchenDisplay;
+import com.datamate.storefront.infrastructure.adapter.outbound.kitchen.OutboxRelay;
+import com.datamate.storefront.infrastructure.adapter.outbound.persistence.JdbcOutboxStore;
+import com.datamate.storefront.infrastructure.adapter.outbound.persistence.SpringTransactions;
 import java.time.Clock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -47,7 +50,7 @@ class StorefrontConfiguration {
     }
 
     @Bean
-    PlaceOrderService placeOrderService(
+    PlaceOrderUseCase placeOrderUseCase(
             Transactions transactions,
             IdempotencyKeys idempotencyKeys,
             Inventory inventory,
@@ -62,7 +65,12 @@ class StorefrontConfiguration {
     }
 
     @Bean
-    OutboxRelay outboxRelay(JdbcClient jdbc, KitchenDisplay kitchen, StorefrontProperties properties) {
-        return new OutboxRelay(jdbc, kitchen, properties.outbox().batchSize(), properties.outbox().lease());
+    FindOrderUseCase findOrderUseCase(Orders orders) {
+        return new FindOrderService(orders);
+    }
+
+    @Bean
+    OutboxRelay outboxRelay(JdbcOutboxStore outbox, KitchenDisplay kitchen, StorefrontProperties properties) {
+        return new OutboxRelay(outbox, kitchen, properties.outbox().batchSize(), properties.outbox().lease());
     }
 }

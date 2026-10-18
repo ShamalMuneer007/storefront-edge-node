@@ -34,6 +34,17 @@ To load the demo catalog, add `-Dspring-boot.run.profiles=demo`.
 
 API docs are at http://localhost:8080/swagger-ui.html.
 
+## Load test
+
+Run against a fresh local database with the app started (`docker compose down -v`, `docker compose up -d`, `.\mvnw.cmd spring-boot:run`):
+```powershell
+Get-Content load\seed.sql | docker compose exec -T postgres psql -U storefront -d storefront
+java load\LoadTest.java http://localhost:8080 rush 3000 50 0.2     # 50 terminals fight over 1,000 units, 20% duplicate bursts
+java load\LoadTest.java http://localhost:8080 mixed 20000 50 0.1   # multi-item baskets at sustained load
+Get-Content load\invariants.sql | docker compose exec -T postgres psql -U storefront -d storefront
+```
+`invariants.sql` checks gap-free numbering, chronology, stock reconciliation, one order per key, totals and kitchen delivery.
+
 ## API
 ```powershell
 curl -i -X POST http://localhost:8080/api/orders `

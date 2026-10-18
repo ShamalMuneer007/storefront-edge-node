@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+.zed/
+.postman/
+postman/
+
+### Assignment brief (not for publication) ###
+CANDIDATE_ASSIGNMENT.md

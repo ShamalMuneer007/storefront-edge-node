@@ -86,6 +86,9 @@ class OrderApiTest extends IntegrationTest {
     void validatesInput() {
         assertThat(placeOrder("T1", "K1", "BURGER", 0).statusCode()).isEqualTo(400);
         assertThat(postOrder("T1", "K2", "{\"items\":[]}").statusCode()).isEqualTo(400);
+        assertThat(postOrder("T1", "K2", "{\"items\":[null]}").statusCode()).isEqualTo(400);
+        assertThat(postOrder("T1", "K2", "{\"items\":[{\"sku\":\"BURGER\",\"quantity\":1.5}]}").statusCode())
+                .isEqualTo(400);
         assertThat(postOrder("T1", "K".repeat(65), "{\"items\":[{\"sku\":\"BURGER\",\"quantity\":1}]}").statusCode())
                 .isEqualTo(400);
 

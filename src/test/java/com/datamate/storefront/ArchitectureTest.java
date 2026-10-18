@@ -18,16 +18,27 @@ class ArchitectureTest {
     static final ArchRule domainIsPureJava = noClasses()
             .that().resideInAPackage("..domain..")
             .should().dependOnClassesThat().resideInAnyPackage(FRAMEWORKS)
-            .orShould().dependOnClassesThat().resideInAnyPackage("..application..", "..infrastructure..", "..web..");
+            .orShould().dependOnClassesThat().resideInAnyPackage("..application..", "..infrastructure..");
 
     @ArchTest
     static final ArchRule applicationIsFrameworkFree = noClasses()
             .that().resideInAPackage("..application..")
             .should().dependOnClassesThat().resideInAnyPackage(FRAMEWORKS)
-            .orShould().dependOnClassesThat().resideInAnyPackage("..infrastructure..", "..web..");
+            .orShould().dependOnClassesThat().resideInAPackage("..infrastructure..");
 
     @ArchTest
-    static final ArchRule webDoesNotReachIntoInfrastructure = noClasses()
-            .that().resideInAPackage("..web..")
-            .should().dependOnClassesThat().resideInAPackage("..infrastructure..");
+    static final ArchRule restCallsUseCasesOnly = noClasses()
+            .that().resideInAPackage("..adapter.inbound.rest..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("..application.service..", "..application.port.outbound..", "..adapter.outbound..");
+
+    @ArchTest
+    static final ArchRule outboundAdaptersDoNotCallInbound = noClasses()
+            .that().resideInAPackage("..adapter.outbound..")
+            .should().dependOnClassesThat().resideInAPackage("..adapter.inbound..");
+
+    @ArchTest
+    static final ArchRule servicesAreWiredOnlyByConfig = noClasses()
+            .that().resideOutsideOfPackages("..application.service..", "..infrastructure.config..")
+            .should().dependOnClassesThat().resideInAPackage("..application.service..");
 }
